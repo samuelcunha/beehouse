@@ -3,13 +3,13 @@ import sys
 import ctypes
 import threading
 from scapy.all import *
+from datetime import datetime
 from queue import Queue
 
 banner = '''-----------------------
 SniffnDetect v.1.1
 -----------------------
 '''
-
 
 class SniffnDetect():
     def __init__(self):
@@ -22,12 +22,22 @@ class SniffnDetect():
         self.MAC_TABLE = {}
         self.RECENT_ACTIVITIES = []
         self.FILTERED_ACTIVITIES = {
-            'TCP-SYN': {'flag': False, 'activities': [], 'attacker-mac': []},
-            'TCP-SYNACK': {'flag': False, 'activities': [], 'attacker-mac': []},
-            'ICMP-POD': {'flag': False, 'activities': [], 'attacker-mac': []},
-            'ICMP-SMURF': {'flag': False, 'activities': [], 'attacker-mac': []},
+            'TCP-SYN': {'flag': False, 'activities': [], 'attacker-mac': [], 'attacker-ip': []},
+            'TCP-SYNACK': {'flag': False, 'activities': [], 'attacker-mac': [], 'attacker-ip': []},
+            'ICMP-POD': {'flag': False, 'activities': [], 'attacker-mac': [], 'attacker-ip': []},
+            'ICMP-SMURF': {'flag': False, 'activities': [], 'attacker-mac': [], 'attacker-ip': []},
         }
         self.flag = False
+        self.previousFlag = False
+        self.attackTimestamp = None
+
+        f = open("attackers.log", "w")
+        f.write("")
+        f.close()
+
+        f = open("attacks.log", "w")
+        f.write("")
+        f.close()
 
     def sniffer_threader(self):
         while self.flag:
@@ -44,7 +54,7 @@ class SniffnDetect():
     def check_avg_time(self, activities):
         time = 0
         c = -1
-        while c > -31:
+        while c > -21:
             time += activities[c][0] - activities[c-1][0]
             c -= 1
         time /= len(activities)
@@ -55,16 +65,38 @@ class SniffnDetect():
         for mac in self.FILTERED_ACTIVITIES[category]['attacker-mac']:
             data.append(
                 f"({self.MAC_TABLE[mac]}, {mac})" if mac in self.MAC_TABLE else f"(Unknown IP, {mac})")
+        for ip in self.FILTERED_ACTIVITIES[category]['attacker-ip']:
+            data.append(f"{ip}")
+            f = open("attackers.log", "a")
+            f.write(f"{ip}\n")
+            f.close()
         return category + ' Attackers :<br>' + "<br>".join(data) + '<br><br>'
 
     def set_flags(self):
         for category in self.FILTERED_ACTIVITIES:
             if len(self.FILTERED_ACTIVITIES[category]['activities']) > 20:
-                self.FILTERED_ACTIVITIES[category]['flag'] = self.check_avg_time(
+                inAttack = self.check_avg_time(
                     self.FILTERED_ACTIVITIES[category]['activities'])
-                if self.FILTERED_ACTIVITIES[category]['flag']:
-                    self.FILTERED_ACTIVITIES[category]['attacker-mac'] = list(
-                        set([i[3] for i in self.FILTERED_ACTIVITIES[category]['activities']]))
+                self.FILTERED_ACTIVITIES[category]['flag'] = inAttack
+                now = datetime.now()
+                if inAttack:
+                    if not self.previousFlag:
+                        self.previousFlag = True
+                        self.attackTimestamp = now
+                        f = open("attacks.log", "a")
+                        startTime = now.strftime("%Y-%m-%d %H:%M:%S")
+                        f.write(f"ATTACK - START:  {startTime}\n")
+                        f.close()
+                        self.FILTERED_ACTIVITIES[category]['attacker-ip'] = list(
+                            set([i[1] for i in self.FILTERED_ACTIVITIES[category]['activities']]))
+                else:
+                    if self.previousFlag:
+                        self.previousFlag = False
+                        endTime = now.strftime("%Y-%m-%d %H:%M:%S")
+                        duration = now - self.attackTimestamp
+                        f = open("attacks.log", "a")
+                        f.write(f"ATTACK - END:  {endTime} - {duration}\n\n")
+                        f.close()
 
     def analyze_packet(self, pkt):
         src_ip, dst_ip, src_port, dst_port, tcp_flags, icmp_type = None, None, None, None, None, None
@@ -115,7 +147,7 @@ class SniffnDetect():
         attack_type = None
 
         if ICMP in pkt:
-            if src_ip == self.MY_IP and src_mac != self.MY_MAC:
+            if src_ip == self.MY_IP:
                 self.FILTERED_ACTIVITIES['ICMP-SMURF']['activities'].append([
                                                                             pkt.time, ])
                 attack_type = 'ICMP-SMURF PACKET'
@@ -129,12 +161,12 @@ class SniffnDetect():
             if TCP in pkt:
                 if tcp_flags == "S":
                     self.FILTERED_ACTIVITIES['TCP-SYN']['activities'].append([
-                                                                             pkt.time, ])
+                                                                             pkt.time, pkt.sprintf("%IP.src%"), ])
                     attack_type = 'TCP-SYN PACKET'
 
                 elif tcp_flags == "SA":
                     self.FILTERED_ACTIVITIES['TCP-SYNACK']['activities'].append([
-                                                                                pkt.time, ])
+                                                                                pkt.time, pkt.sprintf("%IP.src%"), ])
                     attack_type = 'TCP-SYNACK PACKET'
 
         self.RECENT_ACTIVITIES.append(

